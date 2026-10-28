@@ -83,7 +83,7 @@ footer { color: var(--muted); font-size: 12px; margin-top: 24px; }
 <body>
 <main>
   <h1>VHF 活動訊號檢查</h1>
-  <p class="sub">選擇上山錄的 TR8 錄音檔，自動找出發報器的「活動訊號」段落，逐段聽過確認後判定個體狀態。音檔只在這台裝置的瀏覽器內分析，不會上傳。</p>
+  <p class="sub">選擇上山錄的 TR8 錄音檔，電腦自動找出發報器的活動與休息訊號，直接判定正常或異常，人工抽查為輔。音檔只在這台裝置的瀏覽器內分析，不會上傳。</p>
 
   <section class="card">
     <div class="drop" id="drop">
@@ -136,7 +136,7 @@ footer { color: var(--muted); font-size: 12px; margin-top: 24px; }
 
     <div class="card">
       <strong>活動段落（人工抽查，輔助用）</strong>
-      <p class="sub" style="margin:2px 0 6px">電腦已把下列段落算成活動。可播放抽查：嗶聲明顯變快（約每秒兩聲）可按「是活動」標記確認；若是腳步、說話、碰撞等雜音請按「不是」，該段就不列入計算。</p>
+      <p class="sub" style="margin:2px 0 6px">電腦已把下列段落算成活動。可播放抽查：嗶聲明顯變快（約每秒兩聲）可按「是活動」標記確認；若聽起來仍是慢速嗶聲、或只是沙沙的接收機雜訊，請按「不是」，該段就不列入計算。</p>
       <div id="segs"></div>
     </div>
   </section>
@@ -378,7 +378,7 @@ function computeVerdict() {
   if (actSec >= minSec) {
     kind = "ok"; cls = "v-ok"; title = "✅ 正常：有活動訊號";
     text = `電腦判定活動訊號${label} ${actSec.toFixed(0)} 秒（門檻 ${minSec} 秒）。` +
-      (confSec > 0 ? `其中 ${confSec.toFixed(0)} 秒已人工確認。` : "可在下方播放最長的段落抽查；若是雜音請按「不是」排除。");
+      (confSec > 0 ? `其中 ${confSec.toFixed(0)} 秒已人工確認。` : "可在下方播放最長的段落抽查；若不是快速嗶聲請按「不是」排除。");
   } else if (restSec < 30) {
     kind = "none"; cls = "v-bad"; title = "🚨 無訊號：立即通報並進入搜索";
     text = "整段幾乎沒有收到發報器訊號。請先確認錄音的頻率、天線方向與接收機設定，並立即通報負責人、進入搜索。";
