@@ -208,7 +208,7 @@ function detectPulses(env, K, src) {
       if (seg[i] > thr) {
         let j = i, m = i;
         while (j < seg.length && seg[j] > thr) { if (seg[j] > seg[m]) m = j; j++; }
-        raw.push({ t: (w0 + m) / FS, a: (seg[m] - med) / mad, src });
+        raw.push({ t: (w0 + m) / FS, a: (seg[m] - med) / mad, raw: seg[m] - med, src });
         i = j;
       } else i++;
     }
@@ -225,6 +225,22 @@ function thinPulses(list, minGap) {
     else out.push(p);
   }
   return out;
+}
+
+// 比附近的嗶聲弱太多的脈衝視為雜訊（休息嗶聲之間的小凸起），不拿來組節奏鏈。
+// 真正的活動嗶聲和前後的嗶聲一樣大聲；雜訊通常不到 1/10。
+function markWeak(pulses, halfWin = 6, ratio = 0.08) {
+  for (const src of ["hp", "tone"]) {
+    const list = pulses.filter(p => p.src === src);
+    let lo = 0, hi = 0;
+    for (const p of list) {
+      while (list[lo].t < p.t - halfWin) lo++;
+      while (hi < list.length && list[hi].t <= p.t + halfWin) hi++;
+      const near = list.slice(lo, hi).map(q => q.raw).sort((x, y) => x - y);
+      const ref = near[Math.floor(near.length * 0.8)];
+      p.weak = near.length >= 4 && p.raw < ratio * ref;
+    }
+  }
 }
 
 // ---------- 節奏鏈：找出間隔為 P 的整數倍、連續成串的脈衝 ----------
@@ -310,9 +326,10 @@ async function analyze(file) {
   const K = +$("sens").value || 12;
   let pulses = detectPulses(envHP, K, "hp").concat(detectPulses(envBP, K - 1, "tone"));
   pulses = dedupe(pulses, 0.06);
+  markWeak(pulses);
 
   const pAct0 = +$("pAct").value, pRest0 = +$("pRest").value;
-  const used = new Uint8Array(pulses.length);
+  const used = Uint8Array.from(pulses, p => p.weak ? 1 : 0);
   // 先找活動鏈（0.5 秒一聲，可容許漏 1 聲），再用剩下的脈衝找休息鏈
   const actChains = findChains(pulses, pAct0, [1, 2], 5, used);
   actChains.forEach(c => c.forEach(i => { used[i] = 1; pulses[i].kind = "act"; }));
