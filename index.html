@@ -68,6 +68,8 @@ canvas { display: block; width: 100%; }
 .tag.yes { background: var(--ok-bg); color: var(--ok-ink); }
 .tag.no { background: var(--bg); color: var(--muted); }
 .tag.pend { background: var(--pend-bg); color: var(--pend-ink); }
+.tag.auto { background: var(--bg); color: var(--muted); border: 1px solid var(--line); }
+.verdict .prev { display: inline-flex; gap: 6px; align-items: center; margin-top: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
 .empty { color: var(--muted); font-size: 14px; padding: 6px 0; }
 .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .hidden { display: none; }
@@ -133,13 +135,13 @@ footer { color: var(--muted); font-size: 12px; margin-top: 24px; }
     </div>
 
     <div class="card">
-      <strong>疑似活動段落：請逐段播放確認</strong>
-      <p class="sub" style="margin:2px 0 6px">聽到的嗶聲明顯變快（約每秒兩聲）就按「是活動」；若是腳步、說話、碰撞等雜音按「不是」。</p>
+      <strong>活動段落（人工抽查，輔助用）</strong>
+      <p class="sub" style="margin:2px 0 6px">電腦已把下列段落算成活動。可播放抽查：嗶聲明顯變快（約每秒兩聲）可按「是活動」標記確認；若是腳步、說話、碰撞等雜音請按「不是」，該段就不列入計算。</p>
       <div id="segs"></div>
     </div>
   </section>
 
-  <footer>判定規則：確認後的活動訊號 ≥ 門檻秒數 → 正常；不足 → 異常，應進入搜索。本工具只做輔助，最後由照養員確認。</footer>
+  <footer>判定規則：活動訊號 ≥ 門檻秒數 → 正常；不足 → 異常，第一日通報負責人，連續兩日異常進入搜索；完全沒有訊號 → 立即通報並搜索。電腦先判定，人工抽查為輔。</footer>
 </main>
 
 <script>
@@ -364,27 +366,31 @@ function computeVerdict() {
   const s = state, minSec = +$("minSec").value || 10, mode = $("mode").value;
   const segDur = x => x.end - x.start;
   const agg = arr => mode === "max" ? Math.max(0, ...arr.map(segDur)) : arr.reduce((a, x) => a + segDur(x), 0);
+  // 電腦先判定：自動偵測的段落都算活動，人工按「不是」的才排除
+  const counted = s.actSegs.filter(x => x.review !== false);
   const confirmed = s.actSegs.filter(x => x.review === true);
-  const pending = s.actSegs.filter(x => x.review === null);
+  const rejected = s.actSegs.filter(x => x.review === false);
+  const actSec = agg(counted);
   const confSec = agg(confirmed);
-  const possibleSec = agg(confirmed.concat(pending));
   const restSec = s.restSegs.reduce((a, x) => a + segDur(x), 0);
   const label = mode === "max" ? "最長連續" : "累計";
-  let cls, title, text;
-  if (confSec >= minSec) {
-    cls = "v-ok"; title = "✅ 正常：有活動訊號";
-    text = `已確認活動訊號${label} ${confSec.toFixed(0)} 秒（門檻 ${minSec} 秒）。`;
-  } else if (pending.length && possibleSec >= minSec) {
-    cls = "v-pend"; title = `⏳ 還有 ${pending.length} 段待確認`;
-    text = `自動偵測到疑似活動${label}約 ${possibleSec.toFixed(0)} 秒，請在下方逐段播放確認後才會給出判定。`;
+  let kind, cls, title, text;
+  if (actSec >= minSec) {
+    kind = "ok"; cls = "v-ok"; title = "✅ 正常：有活動訊號";
+    text = `電腦判定活動訊號${label} ${actSec.toFixed(0)} 秒（門檻 ${minSec} 秒）。` +
+      (confSec > 0 ? `其中 ${confSec.toFixed(0)} 秒已人工確認。` : "可在下方播放最長的段落抽查；若是雜音請按「不是」排除。");
+  } else if (restSec < 30) {
+    kind = "none"; cls = "v-bad"; title = "🚨 無訊號：立即通報並進入搜索";
+    text = "整段幾乎沒有收到發報器訊號。請先確認錄音的頻率、天線方向與接收機設定，並立即通報負責人、進入搜索。";
+  } else if (s.prevAbnormal) {
+    kind = "search"; cls = "v-bad"; title = "🚨 連續兩日異常：進入搜索";
+    text = `今日活動訊號${label}只有 ${actSec.toFixed(0)} 秒（門檻 ${minSec} 秒），且前一日也異常。請通報負責人並進入搜索。`;
   } else {
-    cls = "v-bad"; title = "⚠️ 異常：活動訊號不足，應進入搜索";
-    text = `確認的活動訊號${label}只有 ${confSec.toFixed(0)} 秒（門檻 ${minSec} 秒）。` +
-      (restSec > 0 ? ` 錄音中有收到休息訊號約 ${fmtDur(restSec)}，表示發報器仍在收訊範圍內。`
-                   : " 整段幾乎沒有收到發報器訊號，請確認頻率、天線方向與接收機設定。");
-    if (pending.length) text += `（另有 ${pending.length} 段未確認）`;
+    kind = "warn"; cls = "v-pend"; title = "⚠️ 異常（第一日）：請通報負責人";
+    text = `活動訊號${label}只有 ${actSec.toFixed(0)} 秒（門檻 ${minSec} 秒）。錄音中收到休息訊號約 ${fmtDur(restSec)}，發報器在收訊範圍內，個體可能長時間靜止。` +
+      "第一日異常先通報；若前一日也異常，請勾選下方，判定會改為進入搜索。";
   }
-  return { cls, title, text, confSec, possibleSec, restSec, pendingN: pending.length };
+  return { kind, cls, title, text, actSec, confSec, restSec, rejectedN: rejected.length };
 }
 
 // ---------- 畫面 ----------
@@ -399,12 +405,16 @@ function render() {
 function renderVerdict() {
   const v = computeVerdict(), s = state;
   $("verdict").className = "verdict " + v.cls;
-  $("verdict").innerHTML = `<h2>${v.title}</h2><p>${v.text}</p>`;
+  $("verdict").innerHTML = `<h2>${v.title}</h2><p>${v.text}</p>` +
+    (v.kind === "warn" || v.kind === "search"
+      ? `<label class="prev"><input type="checkbox" id="prevAbn" ${s.prevAbnormal ? "checked" : ""}> 前一日的檢查結果也是異常</label>` : "");
+  const cb = $("prevAbn");
+  if (cb) cb.onchange = () => { s.prevAbnormal = cb.checked; renderVerdict(); renderSegments(); };
   const n = k => s.pulses.filter(p => p.kind === k).length;
   $("stats").innerHTML = [
     ["錄音長度", fmtDur(s.dur)],
-    ["疑似活動段落", `${s.actSegs.length} 段`],
-    ["已確認活動", `${v.confSec.toFixed(0)} 秒`],
+    ["活動段落", `${s.actSegs.length - v.rejectedN} 段`],
+    ["活動訊號", `${v.actSec.toFixed(0)} 秒`],
     ["休息訊號", fmtDur(v.restSec)],
     ["實測活動間隔", s.pAct ? `${s.pAct.toFixed(3)} 秒` : "—"],
     ["實測休息間隔", s.pRest ? `${s.pRest.toFixed(3)} 秒` : "—"],
@@ -481,19 +491,16 @@ function renderSegments() {
   }
   box.innerHTML = "";
   const ref = median(s.envHP);
-  const v = computeVerdict();
-  if (v.cls === "v-ok" && v.pendingN) {
-    box.insertAdjacentHTML("beforeend", `<p class="empty">已達門檻，其餘 ${v.pendingN} 段不需再確認。</p>`);
-  } else if (s.actSegs.length > 1) {
-    box.insertAdjacentHTML("beforeend", `<p class="empty">由最長的段落排起，確認到達門檻即可停止。</p>`);
+  if (s.actSegs.length > 1) {
+    box.insertAdjacentHTML("beforeend", `<p class="empty">由最長的段落排起。不需要每段都聽，抽查最長的一兩段即可。</p>`);
   }
-  // 長段落排前面：通常確認一兩段就能達到門檻
+  // 長段落排前面：抽查最有代表性的段落
   const ordered = s.actSegs.slice().sort((a, b) => (b.end - b.start) - (a.end - a.start));
   for (const seg of ordered) {
     const row = document.createElement("div");
     row.className = "seg";
-    const tag = seg.review === true ? `<span class="tag yes">已確認活動</span>` :
-                seg.review === false ? `<span class="tag no">已排除</span>` : `<span class="tag pend">待確認</span>`;
+    const tag = seg.review === true ? `<span class="tag yes">人工確認</span>` :
+                seg.review === false ? `<span class="tag no">已排除</span>` : `<span class="tag auto">電腦判定</span>`;
     row.innerHTML = `
       <div class="meta"><b>第 ${seg.id + 1} 段　${fmtClock(seg.start)} – ${fmtClock(seg.end)}</b>${tag}
         <small>長度 ${(seg.end - seg.start).toFixed(1)} 秒・${seg.n} 聲快速嗶聲</small></div>
@@ -541,12 +548,13 @@ function exportCsv() {
     ["檔名", s.file.name], ["個體", $("animal").value], ["記錄者", $("who").value],
     ["分析時間", new Date().toLocaleString("zh-TW")], ["錄音長度_秒", s.dur.toFixed(1)],
     ["判定", v.title.replace(/^[^\p{L}]+/u, "")], ["說明", v.text],
-    ["已確認活動_秒", v.confSec.toFixed(1)], ["休息訊號_秒", v.restSec.toFixed(1)],
+    ["前一日也異常", s.prevAbnormal ? "是" : "否"],
+    ["活動訊號_秒", v.actSec.toFixed(1)], ["人工確認活動_秒", v.confSec.toFixed(1)], ["休息訊號_秒", v.restSec.toFixed(1)],
     ["實測活動間隔_秒", s.pAct ? s.pAct.toFixed(3) : ""], ["實測休息間隔_秒", s.pRest ? s.pRest.toFixed(3) : ""],
     [],
     ["段落", "類型", "起_檔內秒", "迄_檔內秒", "起_時間", "迄_時間", "長度_秒", "嗶聲數", "人工確認"],
     ...s.actSegs.map(x => [x.id + 1, "活動", x.start.toFixed(1), x.end.toFixed(1), fmtClock(x.start), fmtClock(x.end),
-      (x.end - x.start).toFixed(1), x.n, x.review === true ? "是活動" : x.review === false ? "不是" : "未確認"]),
+      (x.end - x.start).toFixed(1), x.n, x.review === true ? "是活動" : x.review === false ? "不是（已排除）" : "電腦判定（未聽）"]),
     ...s.restSegs.map((x, i) => [`R${i + 1}`, "休息", x.start.toFixed(1), x.end.toFixed(1), fmtClock(x.start), fmtClock(x.end),
       (x.end - x.start).toFixed(1), x.n, ""]),
   ];
