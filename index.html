@@ -1,0 +1,591 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VHF 活動訊號檢查</title>
+<style>
+:root {
+  --bg: #f6f5f1; --card: #ffffff; --ink: #1d1f1c; --muted: #6b6f68; --line: #dedcd4;
+  --active: #d2452f; --active-bg: rgba(210,69,47,.16);
+  --rest: #2f8a4f;   --rest-bg: rgba(47,138,79,.14);
+  --other: #9a9d96;  --wave: #5b6b8a; --accent: #2d5b8a;
+  --ok-bg: #e5f3e8; --ok-ink: #1e5e33; --bad-bg: #fbe6e1; --bad-ink: #8a2414; --pend-bg: #fdf3d8; --pend-ink: #7a5a08;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #161815; --card: #20231f; --ink: #ecebe6; --muted: #a2a59d; --line: #363a34;
+    --active: #ff7a62; --active-bg: rgba(255,122,98,.18);
+    --rest: #5fcf86;   --rest-bg: rgba(95,207,134,.14);
+    --other: #70746c;  --wave: #8ea3c9; --accent: #7fb0e6;
+    --ok-bg: #18361f; --ok-ink: #9fe0b2; --bad-bg: #3d1a14; --bad-ink: #ffb3a3; --pend-bg: #3a2f10; --pend-ink: #f2d27a;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink);
+  font: 15px/1.6 system-ui, -apple-system, "Segoe UI", "Noto Sans TC", "Microsoft JhengHei", sans-serif; }
+main { max-width: 980px; margin: 0 auto; padding: 20px 16px 60px; }
+h1 { font-size: 22px; margin: 4px 0 2px; }
+.sub { color: var(--muted); margin: 0 0 18px; font-size: 14px; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px; margin-bottom: 14px; }
+.drop { border: 2px dashed var(--line); border-radius: 10px; padding: 26px 16px; text-align: center; cursor: pointer; }
+.drop.over { border-color: var(--accent); }
+.drop strong { display: block; font-size: 16px; }
+.drop span { color: var(--muted); font-size: 13px; }
+input[type=file] { display: none; }
+label.inline { display: inline-flex; gap: 6px; align-items: center; margin: 4px 14px 4px 0; font-size: 14px; }
+input[type=number], input[type=text], select { font: inherit; padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--ink); }
+input[type=number] { width: 80px; }
+button { font: inherit; border: 1px solid var(--line); background: var(--bg); color: var(--ink); border-radius: 7px; padding: 5px 12px; cursor: pointer; }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+button:disabled { opacity: .5; cursor: default; }
+details summary { cursor: pointer; color: var(--muted); font-size: 14px; }
+.status { color: var(--muted); font-size: 14px; min-height: 1.6em; }
+.verdict { border-radius: 10px; padding: 14px 16px; margin-bottom: 14px; }
+.verdict h2 { margin: 0 0 4px; font-size: 20px; }
+.verdict p { margin: 0; font-size: 14px; }
+.v-ok { background: var(--ok-bg); color: var(--ok-ink); }
+.v-bad { background: var(--bad-bg); color: var(--bad-ink); }
+.v-pend { background: var(--pend-bg); color: var(--pend-ink); }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-top: 12px; }
+.stat { background: var(--bg); border-radius: 8px; padding: 8px 10px; }
+.stat b { display: block; font-size: 18px; font-variant-numeric: tabular-nums; }
+.stat span { font-size: 12px; color: var(--muted); }
+canvas { display: block; width: 100%; }
+#overview { height: 130px; cursor: pointer; border-radius: 6px; background: var(--bg); }
+.legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 13px; color: var(--muted); margin-top: 6px; }
+.legend i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; vertical-align: -1px; margin-right: 4px; }
+.seg { border-top: 1px solid var(--line); padding: 12px 0; display: grid; grid-template-columns: 1fr auto; gap: 8px 12px; align-items: center; }
+.seg:first-child { border-top: 0; }
+.seg .meta { font-size: 14px; }
+.seg .meta b { font-variant-numeric: tabular-nums; }
+.seg .meta small { color: var(--muted); display: block; }
+.seg canvas { grid-column: 1 / -1; height: 54px; border-radius: 5px; background: var(--bg); }
+.seg .acts { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.seg .acts button.on-yes { background: var(--rest); border-color: var(--rest); color: #fff; }
+.seg .acts button.on-no { background: var(--other); border-color: var(--other); color: #fff; }
+.tag { display: inline-block; font-size: 12px; padding: 0 7px; border-radius: 10px; margin-left: 6px; }
+.tag.yes { background: var(--ok-bg); color: var(--ok-ink); }
+.tag.no { background: var(--bg); color: var(--muted); }
+.tag.pend { background: var(--pend-bg); color: var(--pend-ink); }
+.empty { color: var(--muted); font-size: 14px; padding: 6px 0; }
+.row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.hidden { display: none; }
+footer { color: var(--muted); font-size: 12px; margin-top: 24px; }
+@media (max-width: 560px) {
+  .seg { grid-template-columns: 1fr; }
+  .seg .acts { justify-content: flex-start; }
+}
+</style>
+</head>
+<body>
+<main>
+  <h1>VHF 活動訊號檢查</h1>
+  <p class="sub">選擇上山錄的 TR8 錄音檔，自動找出發報器的「活動訊號」段落，逐段聽過確認後判定個體狀態。音檔只在這台裝置的瀏覽器內分析，不會上傳。</p>
+
+  <section class="card">
+    <div class="drop" id="drop">
+      <strong>點這裡選擇錄音檔，或把檔案拖進來</strong>
+      <span>MP3 / WAV / M4A，建議 10–15 分鐘。檔名若為 YYMMDD_HHMM（例 261103_0930）會自動換算實際時間。</span>
+    </div>
+    <input type="file" id="file" accept="audio/*,.mp3,.wav,.m4a,.aac,.ogg,.flac">
+    <div class="row" style="margin-top:10px">
+      <label class="inline">記錄者 <input type="text" id="who" placeholder="姓名" style="width:120px"></label>
+      <label class="inline">個體 <input type="text" id="animal" placeholder="例：山羌 A01" style="width:140px"></label>
+    </div>
+    <details style="margin-top:6px">
+      <summary>進階設定（換發報器才需要改）</summary>
+      <div style="margin-top:8px">
+        <label class="inline">休息嗶聲間隔 <input type="number" id="pRest" value="1.52" step="0.01"> 秒</label>
+        <label class="inline">活動嗶聲間隔 <input type="number" id="pAct" value="0.507" step="0.001"> 秒</label>
+        <label class="inline">存活門檻 <input type="number" id="minSec" value="10" step="1"> 秒</label>
+        <label class="inline">計算方式
+          <select id="mode"><option value="sum">所有確認段落加總</option><option value="max">單一段落連續</option></select>
+        </label>
+        <label class="inline">偵測靈敏度 <input type="number" id="sens" value="12" step="1"> （數字越小越靈敏）</label>
+      </div>
+    </details>
+    <p class="status" id="status"></p>
+  </section>
+
+  <section id="results" class="hidden">
+    <div class="verdict" id="verdict"></div>
+
+    <div class="card">
+      <div class="row" style="justify-content:space-between">
+        <strong id="fname"></strong>
+        <div class="row">
+          <button id="playAll">▶ 播放</button>
+          <button id="exportCsv">下載紀錄 CSV</button>
+        </div>
+      </div>
+      <div class="stats" id="stats"></div>
+      <div style="margin-top:14px">
+        <canvas id="overview"></canvas>
+        <div class="legend">
+          <span><i style="background:var(--active)"></i>活動訊號（約 0.5 秒一聲）</span>
+          <span><i style="background:var(--rest)"></i>休息訊號（約 1.5 秒一聲）</span>
+          <span><i style="background:var(--other)"></i>其他聲響</span>
+          <span>點圖可從該處播放</span>
+        </div>
+      </div>
+      <audio id="audio" preload="auto" class="hidden"></audio>
+    </div>
+
+    <div class="card">
+      <strong>疑似活動段落：請逐段播放確認</strong>
+      <p class="sub" style="margin:2px 0 6px">聽到的嗶聲明顯變快（約每秒兩聲）就按「是活動」；若是腳步、說話、碰撞等雜音按「不是」。</p>
+      <div id="segs"></div>
+    </div>
+  </section>
+
+  <footer>判定規則：確認後的活動訊號 ≥ 門檻秒數 → 正常；不足 → 異常，應進入搜索。本工具只做輔助，最後由照養員確認。</footer>
+</main>
+
+<script>
+"use strict";
+const SR = 22050;          // 分析取樣率
+const HOP = 44;            // 包絡每格 ≈ 2 ms
+const FS = SR / HOP;       // 包絡取樣率 ≈ 501 Hz
+const $ = id => document.getElementById(id);
+
+let state = null;          // 分析結果
+let fileURL = null;
+
+// ---------- 讀檔與濾波 ----------
+async function decode(arrayBuf) {
+  const ctx = new OfflineAudioContext(1, 1, SR);
+  return await ctx.decodeAudioData(arrayBuf);   // 會自動重取樣到 22050 Hz
+}
+
+async function filtered(buf, type, freq, Q) {
+  const ctx = new OfflineAudioContext(1, buf.length, SR);
+  const src = ctx.createBufferSource();
+  src.buffer = buf;
+  let node = src;
+  for (let i = 0; i < 2; i++) {                  // 兩級串接 ≈ 四階
+    const f = ctx.createBiquadFilter();
+    f.type = type; f.frequency.value = freq;
+    if (Q) f.Q.value = Q;
+    node.connect(f); node = f;
+  }
+  node.connect(ctx.destination);
+  src.start();
+  return (await ctx.startRendering()).getChannelData(0);
+}
+
+function envelope(x) {
+  const n = Math.floor(x.length / HOP);
+  const e = new Float32Array(n);
+  for (let b = 0; b < n; b++) {
+    let s = 0;
+    const o = b * HOP;
+    for (let k = 0; k < HOP; k++) { const v = x[o + k]; s += v < 0 ? -v : v; }
+    e[b] = s / HOP;
+  }
+  const sm = new Float32Array(n);
+  for (let i = 0; i < n; i++) sm[i] = (e[Math.max(0, i - 1)] + e[i] + e[Math.min(n - 1, i + 1)]) / 3;
+  return sm;
+}
+
+function median(a) {
+  const s = Float32Array.from(a).sort();
+  return s.length ? s[s.length >> 1] : 0;
+}
+
+// 以每 30 秒的局部中位數 + K×MAD 為門檻抓脈衝峰
+function detectPulses(env, K, src) {
+  const W = Math.round(30 * FS);
+  const raw = [];
+  for (let w0 = 0; w0 < env.length; w0 += W) {
+    const seg = env.subarray(w0, Math.min(env.length, w0 + W));
+    if (seg.length < FS) continue;
+    const med = median(seg);
+    const mad = median(seg.map(v => Math.abs(v - med))) || 1e-12;
+    const thr = med + K * mad;
+    let i = 0;
+    while (i < seg.length) {
+      if (seg[i] > thr) {
+        let j = i, m = i;
+        while (j < seg.length && seg[j] > thr) { if (seg[j] > seg[m]) m = j; j++; }
+        raw.push({ t: (w0 + m) / FS, a: (seg[m] - med) / mad, src });
+        i = j;
+      } else i++;
+    }
+  }
+  return thinPulses(raw, 0.12);
+}
+
+function thinPulses(list, minGap) {
+  list.sort((p, q) => p.t - q.t);
+  const out = [];
+  for (const p of list) {
+    const last = out[out.length - 1];
+    if (last && p.t - last.t < minGap) { if (p.a > last.a) out[out.length - 1] = p; }
+    else out.push(p);
+  }
+  return out;
+}
+
+// ---------- 節奏鏈：找出間隔為 P 的整數倍、連續成串的脈衝 ----------
+function findChains(pulses, P, steps, minLen, used) {
+  const n = pulses.length;
+  const len = new Int32Array(n), prev = new Int32Array(n).fill(-1);
+  const maxBack = P * steps[steps.length - 1] + 0.12;
+  for (let j = 0; j < n; j++) {
+    if (used[j]) continue;
+    len[j] = 1;
+    for (let i = j - 1; i >= 0; i--) {
+      const d = pulses[j].t - pulses[i].t;
+      if (d > maxBack) break;
+      if (used[i]) continue;
+      for (const k of steps) {
+        if (Math.abs(d - k * P) <= 0.04 + 0.01 * k) {
+          if (len[i] + 1 > len[j]) { len[j] = len[i] + 1; prev[j] = i; }
+          break;
+        }
+      }
+    }
+  }
+  const order = [];
+  for (let j = 0; j < n; j++) if (!used[j]) order.push(j);
+  order.sort((a, b) => len[b] - len[a]);
+  const taken = new Uint8Array(n);
+  const chains = [];
+  for (const e of order) {
+    if (len[e] < minLen) break;
+    if (taken[e]) continue;
+    const c = [];
+    for (let j = e; j >= 0 && !taken[j]; j = prev[j]) c.push(j);
+    if (c.length >= minLen) { c.reverse(); c.forEach(k => taken[k] = 1); chains.push(c); }
+  }
+  return chains;
+}
+
+function refinePeriod(pulses, chains, P) {
+  const r = [];
+  for (const c of chains) for (let i = 1; i < c.length; i++) {
+    const d = pulses[c[i]].t - pulses[c[i - 1]].t;
+    const k = Math.round(d / P);
+    if (k >= 1) r.push(d / k);
+  }
+  return r.length ? median(r) : null;
+}
+
+function chainsToSegments(pulses, chains, P, kind, mergeGap) {
+  const segs = chains.map(c => ({
+    kind, start: pulses[c[0]].t, end: pulses[c[c.length - 1]].t + P, n: c.length,
+  })).sort((a, b) => a.start - b.start);
+  const out = [];
+  for (const s of segs) {
+    const last = out[out.length - 1];
+    if (last && s.start - last.end <= mergeGap) { last.end = Math.max(last.end, s.end); last.n += s.n; }
+    else out.push({ ...s });
+  }
+  return out;
+}
+
+// ---------- 主流程 ----------
+async function analyze(file) {
+  const t0 = performance.now();
+  setStatus("讀取並解碼音檔…");
+  if (fileURL) URL.revokeObjectURL(fileURL);
+  fileURL = URL.createObjectURL(file);
+  $("audio").src = fileURL;
+
+  let buf;
+  try { buf = await decode(await file.arrayBuffer()); }
+  catch (e) { setStatus("❌ 無法解碼這個檔案。請確認是 MP3 / WAV / M4A；WMA、AMR 格式瀏覽器不支援，請在錄音筆改設定或先轉檔。"); return; }
+  const dur = buf.length / SR;
+  if (dur > 3600) setStatus(`檔案長 ${fmtDur(dur)}，較長，分析可能需要一些時間…`);
+
+  setStatus("濾波：高頻嗶聲帶…");
+  const hp = await filtered(buf, "highpass", 2500);
+  const envHP = envelope(hp);
+  setStatus("濾波：音調帶（抓微弱訊號）…");
+  const bp = await filtered(buf, "bandpass", 1000, 3.3);
+  const envBP = envelope(bp);
+
+  setStatus("偵測嗶聲…");
+  const K = +$("sens").value || 12;
+  let pulses = detectPulses(envHP, K, "hp").concat(detectPulses(envBP, K - 1, "tone"));
+  pulses = dedupe(pulses, 0.06);
+
+  const pAct0 = +$("pAct").value, pRest0 = +$("pRest").value;
+  const used = new Uint8Array(pulses.length);
+  // 先找活動鏈（0.5 秒一聲，可容許漏 1 聲），再用剩下的脈衝找休息鏈
+  const actChains = findChains(pulses, pAct0, [1, 2], 5, used);
+  actChains.forEach(c => c.forEach(i => { used[i] = 1; pulses[i].kind = "act"; }));
+  const restChains = findChains(pulses, pRest0, [1, 2, 3, 4], 4, used);
+  restChains.forEach(c => c.forEach(i => { if (!pulses[i].kind) pulses[i].kind = "rest"; }));
+
+  const pAct = refinePeriod(pulses, actChains, pAct0);
+  const pRest = refinePeriod(pulses, restChains, pRest0);
+  const actSegs = chainsToSegments(pulses, actChains, pAct || pAct0, "act", 3);
+  const restSegs = chainsToSegments(pulses, restChains, pRest || pRest0, "rest", 10);
+  actSegs.forEach((s, i) => { s.id = i; s.review = null; });
+
+  state = { file, dur, envHP, pulses, actSegs, restSegs, pAct, pRest, start: parseStart(file.name),
+            elapsed: (performance.now() - t0) / 1000 };
+  render();
+  setStatus(`分析完成（${state.elapsed.toFixed(1)} 秒）。`);
+}
+
+function dedupe(list, gap) {
+  list.sort((p, q) => p.t - q.t);
+  const out = [];
+  for (const p of list) {
+    const last = out[out.length - 1];
+    if (last && p.t - last.t < gap) { if (last.src !== "hp" && p.src === "hp") out[out.length - 1] = p; }
+    else out.push(p);
+  }
+  return out;
+}
+
+// ---------- 判定 ----------
+function computeVerdict() {
+  const s = state, minSec = +$("minSec").value || 10, mode = $("mode").value;
+  const segDur = x => x.end - x.start;
+  const agg = arr => mode === "max" ? Math.max(0, ...arr.map(segDur)) : arr.reduce((a, x) => a + segDur(x), 0);
+  const confirmed = s.actSegs.filter(x => x.review === true);
+  const pending = s.actSegs.filter(x => x.review === null);
+  const confSec = agg(confirmed);
+  const possibleSec = agg(confirmed.concat(pending));
+  const restSec = s.restSegs.reduce((a, x) => a + segDur(x), 0);
+  const label = mode === "max" ? "最長連續" : "累計";
+  let cls, title, text;
+  if (confSec >= minSec) {
+    cls = "v-ok"; title = "✅ 正常：有活動訊號";
+    text = `已確認活動訊號${label} ${confSec.toFixed(0)} 秒（門檻 ${minSec} 秒）。`;
+  } else if (pending.length && possibleSec >= minSec) {
+    cls = "v-pend"; title = `⏳ 還有 ${pending.length} 段待確認`;
+    text = `自動偵測到疑似活動${label}約 ${possibleSec.toFixed(0)} 秒，請在下方逐段播放確認後才會給出判定。`;
+  } else {
+    cls = "v-bad"; title = "⚠️ 異常：活動訊號不足，應進入搜索";
+    text = `確認的活動訊號${label}只有 ${confSec.toFixed(0)} 秒（門檻 ${minSec} 秒）。` +
+      (restSec > 0 ? ` 錄音中有收到休息訊號約 ${fmtDur(restSec)}，表示發報器仍在收訊範圍內。`
+                   : " 整段幾乎沒有收到發報器訊號，請確認頻率、天線方向與接收機設定。");
+    if (pending.length) text += `（另有 ${pending.length} 段未確認）`;
+  }
+  return { cls, title, text, confSec, possibleSec, restSec, pendingN: pending.length };
+}
+
+// ---------- 畫面 ----------
+function render() {
+  $("results").classList.remove("hidden");
+  $("fname").textContent = state.file.name;
+  renderVerdict();
+  drawOverview();
+  renderSegments();
+}
+
+function renderVerdict() {
+  const v = computeVerdict(), s = state;
+  $("verdict").className = "verdict " + v.cls;
+  $("verdict").innerHTML = `<h2>${v.title}</h2><p>${v.text}</p>`;
+  const n = k => s.pulses.filter(p => p.kind === k).length;
+  $("stats").innerHTML = [
+    ["錄音長度", fmtDur(s.dur)],
+    ["疑似活動段落", `${s.actSegs.length} 段`],
+    ["已確認活動", `${v.confSec.toFixed(0)} 秒`],
+    ["休息訊號", fmtDur(v.restSec)],
+    ["實測活動間隔", s.pAct ? `${s.pAct.toFixed(3)} 秒` : "—"],
+    ["實測休息間隔", s.pRest ? `${s.pRest.toFixed(3)} 秒` : "—"],
+    ["嗶聲數（活動／休息）", `${n("act")} ／ ${n("rest")}`],
+  ].map(([k, val]) => `<div class="stat"><b>${val}</b><span>${k}</span></div>`).join("");
+}
+
+function css(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+
+function setupCanvas(cv) {
+  const dpr = window.devicePixelRatio || 1;
+  const w = cv.clientWidth, h = cv.clientHeight;
+  cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr);
+  const g = cv.getContext("2d");
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.clearRect(0, 0, w, h);
+  return { g, w, h };
+}
+
+// 畫一段時間範圍：訊號包絡 + 段落底色 + 脈衝刻度
+function drawRange(cv, t0, t1, opts = {}) {
+  const { g, w, h } = setupCanvas(cv);
+  const s = state, env = s.envHP;
+  const axisH = opts.axis ? 16 : 0, tickH = 14, plotH = h - axisH - tickH;
+  const x = t => (t - t0) / (t1 - t0) * w;
+
+  for (const seg of s.restSegs) { g.fillStyle = css("--rest-bg"); g.fillRect(x(seg.start), 0, Math.max(1, x(seg.end) - x(seg.start)), plotH + tickH); }
+  for (const seg of s.actSegs) {
+    if (seg.review === false) continue;
+    g.fillStyle = css("--active-bg"); g.fillRect(x(seg.start), 0, Math.max(2, x(seg.end) - x(seg.start)), plotH + tickH);
+  }
+
+  // 包絡（對數刻度，每像素取最大值）
+  const b0 = Math.max(0, Math.floor(t0 * FS)), b1 = Math.min(env.length, Math.ceil(t1 * FS));
+  let gmed = opts.ref || median(env.subarray(b0, b1)) || 1e-9;
+  g.strokeStyle = css("--wave"); g.lineWidth = 1; g.beginPath();
+  for (let px = 0; px < w; px++) {
+    const a = b0 + Math.floor(px / w * (b1 - b0)), b = Math.max(a + 1, b0 + Math.floor((px + 1) / w * (b1 - b0)));
+    let m = 0; for (let i = a; i < b && i < env.length; i++) if (env[i] > m) m = env[i];
+    const v = Math.min(1, Math.max(0, Math.log10(m / gmed + 1e-9) / 2.2));
+    const y = plotH - v * (plotH - 4);
+    px ? g.lineTo(px + .5, y) : g.moveTo(px + .5, y);
+  }
+  g.stroke();
+
+  for (const p of s.pulses) {
+    if (p.t < t0 || p.t > t1) continue;
+    g.fillStyle = css(p.kind === "act" ? "--active" : p.kind === "rest" ? "--rest" : "--other");
+    g.fillRect(Math.round(x(p.t)), plotH + 2, opts.axis ? 1 : 2, tickH - 4);
+  }
+
+  if (opts.axis) {
+    g.fillStyle = css("--muted"); g.font = "11px system-ui, sans-serif"; g.textBaseline = "top";
+    const span = t1 - t0, step = [10, 30, 60, 120, 300, 600].find(v => span / v <= 10) || 1200;
+    for (let t = Math.ceil(t0 / step) * step; t <= t1; t += step) {
+      const px = x(t); g.fillRect(px, h - axisH, 1, 3); g.fillText(fmtClock(t), Math.min(px + 2, w - 40), h - axisH + 3);
+    }
+  }
+  if (opts.playhead != null && opts.playhead >= t0 && opts.playhead <= t1) {
+    g.fillStyle = css("--accent"); g.fillRect(x(opts.playhead) - 1, 0, 2, plotH + tickH);
+  }
+}
+
+function drawOverview() {
+  const a = $("audio");
+  drawRange($("overview"), 0, state.dur, { axis: true, playhead: a.paused && a.currentTime === 0 ? null : a.currentTime });
+}
+
+function renderSegments() {
+  const box = $("segs"), s = state;
+  if (!s.actSegs.length) {
+    box.innerHTML = `<p class="empty">沒有偵測到活動訊號（約 0.5 秒一聲的連續嗶聲）。可以點上方圖或「播放」自行聆聽確認。</p>`;
+    return;
+  }
+  box.innerHTML = "";
+  const ref = median(s.envHP);
+  const v = computeVerdict();
+  if (v.cls === "v-ok" && v.pendingN) {
+    box.insertAdjacentHTML("beforeend", `<p class="empty">已達門檻，其餘 ${v.pendingN} 段不需再確認。</p>`);
+  } else if (s.actSegs.length > 1) {
+    box.insertAdjacentHTML("beforeend", `<p class="empty">由最長的段落排起，確認到達門檻即可停止。</p>`);
+  }
+  // 長段落排前面：通常確認一兩段就能達到門檻
+  const ordered = s.actSegs.slice().sort((a, b) => (b.end - b.start) - (a.end - a.start));
+  for (const seg of ordered) {
+    const row = document.createElement("div");
+    row.className = "seg";
+    const tag = seg.review === true ? `<span class="tag yes">已確認活動</span>` :
+                seg.review === false ? `<span class="tag no">已排除</span>` : `<span class="tag pend">待確認</span>`;
+    row.innerHTML = `
+      <div class="meta"><b>第 ${seg.id + 1} 段　${fmtClock(seg.start)} – ${fmtClock(seg.end)}</b>${tag}
+        <small>長度 ${(seg.end - seg.start).toFixed(1)} 秒・${seg.n} 聲快速嗶聲</small></div>
+      <div class="acts">
+        <button data-a="play">▶ 播放此段</button>
+        <button data-a="yes" class="${seg.review === true ? "on-yes" : ""}">是活動</button>
+        <button data-a="no" class="${seg.review === false ? "on-no" : ""}">不是</button>
+      </div>
+      <canvas></canvas>`;
+    box.appendChild(row);
+    const pad = 3;
+    drawRange(row.querySelector("canvas"), Math.max(0, seg.start - pad), Math.min(s.dur, seg.end + pad), { ref });
+    row.querySelector('[data-a="play"]').onclick = () => playRange(Math.max(0, seg.start - 1), seg.end + 1);
+    row.querySelector('[data-a="yes"]').onclick = () => setReview(seg, seg.review === true ? null : true);
+    row.querySelector('[data-a="no"]').onclick = () => setReview(seg, seg.review === false ? null : false);
+  }
+}
+
+function setReview(seg, v) {
+  seg.review = v;
+  renderVerdict(); drawOverview(); renderSegments();
+}
+
+// ---------- 播放 ----------
+let stopAt = null;
+function playRange(t0, t1) {
+  const a = $("audio");
+  stopAt = t1;
+  a.currentTime = t0;
+  a.play();
+  tick();
+}
+function tick() {
+  const a = $("audio");
+  if (stopAt != null && a.currentTime >= stopAt) { a.pause(); stopAt = null; }
+  if (state) drawOverview();
+  if (!a.paused) requestAnimationFrame(tick);
+}
+
+// ---------- 匯出 ----------
+function exportCsv() {
+  const s = state, v = computeVerdict();
+  const esc = x => `"${String(x).replace(/"/g, '""')}"`;
+  const lines = [
+    ["檔名", s.file.name], ["個體", $("animal").value], ["記錄者", $("who").value],
+    ["分析時間", new Date().toLocaleString("zh-TW")], ["錄音長度_秒", s.dur.toFixed(1)],
+    ["判定", v.title.replace(/^[^\p{L}]+/u, "")], ["說明", v.text],
+    ["已確認活動_秒", v.confSec.toFixed(1)], ["休息訊號_秒", v.restSec.toFixed(1)],
+    ["實測活動間隔_秒", s.pAct ? s.pAct.toFixed(3) : ""], ["實測休息間隔_秒", s.pRest ? s.pRest.toFixed(3) : ""],
+    [],
+    ["段落", "類型", "起_檔內秒", "迄_檔內秒", "起_時間", "迄_時間", "長度_秒", "嗶聲數", "人工確認"],
+    ...s.actSegs.map(x => [x.id + 1, "活動", x.start.toFixed(1), x.end.toFixed(1), fmtClock(x.start), fmtClock(x.end),
+      (x.end - x.start).toFixed(1), x.n, x.review === true ? "是活動" : x.review === false ? "不是" : "未確認"]),
+    ...s.restSegs.map((x, i) => [`R${i + 1}`, "休息", x.start.toFixed(1), x.end.toFixed(1), fmtClock(x.start), fmtClock(x.end),
+      (x.end - x.start).toFixed(1), x.n, ""]),
+  ];
+  const csv = "﻿" + lines.map(r => r.map(esc).join(",")).join("\r\n");
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
+  a.download = s.file.name.replace(/\.[^.]+$/, "") + "_活動檢查.csv";
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+// ---------- 小工具 ----------
+function parseStart(name) {
+  const m = name.match(/(\d{2})(\d{2})(\d{2})_(\d{2})(\d{2})/);
+  if (!m) return null;
+  const d = new Date(2000 + +m[1], +m[2] - 1, +m[3], +m[4], +m[5]);
+  return isNaN(d) ? null : d;
+}
+function fmtDur(sec) {
+  sec = Math.round(sec);
+  const m = Math.floor(sec / 60), s = sec % 60;
+  return m ? `${m} 分 ${s} 秒` : `${s} 秒`;
+}
+function fmtClock(t) {
+  if (state && state.start) {
+    const d = new Date(state.start.getTime() + t * 1000);
+    return d.toLocaleTimeString("zh-TW", { hour12: false });
+  }
+  const m = Math.floor(t / 60), s = Math.floor(t % 60);
+  return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+}
+function setStatus(msg) { $("status").textContent = msg; }
+
+// ---------- 事件 ----------
+const drop = $("drop");
+drop.onclick = () => $("file").click();
+$("file").onchange = e => { const f = e.target.files[0]; if (f) analyze(f); e.target.value = ""; };
+drop.ondragover = e => { e.preventDefault(); drop.classList.add("over"); };
+drop.ondragleave = () => drop.classList.remove("over");
+drop.ondrop = e => { e.preventDefault(); drop.classList.remove("over"); const f = e.dataTransfer.files[0]; if (f) analyze(f); };
+$("overview").onclick = e => {
+  const r = e.currentTarget.getBoundingClientRect();
+  playRange((e.clientX - r.left) / r.width * state.dur, null);
+};
+$("playAll").onclick = () => { const a = $("audio"); if (a.paused) { stopAt = null; a.play(); tick(); } else a.pause(); };
+$("audio").onplay = () => { $("playAll").textContent = "⏸ 暫停"; };
+$("audio").onpause = () => { $("playAll").textContent = "▶ 播放"; };
+$("exportCsv").onclick = exportCsv;
+["minSec", "mode"].forEach(id => $(id).onchange = () => { if (state) { renderVerdict(); } });
+window.addEventListener("resize", () => { if (state) { drawOverview(); renderSegments(); } });
+
+// 測試用：?src=同網站上的音檔路徑
+const qsrc = new URLSearchParams(location.search).get("src");
+if (qsrc && !/^[a-z]+:/i.test(qsrc)) {
+  fetch(qsrc).then(r => r.blob()).then(b => analyze(new File([b], decodeURIComponent(qsrc.split("/").pop()), { type: b.type })));
+}
+</script>
+</body>
+</html>
